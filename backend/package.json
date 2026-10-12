@@ -1,0 +1,8 @@
+{
+  "name": "bloodnet-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local API for the BloodNet Oracle DBMS project",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "oracledb": "^7.0.1" }
+}
