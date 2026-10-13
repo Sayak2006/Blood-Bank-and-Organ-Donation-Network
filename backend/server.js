@@ -119,11 +119,12 @@ async function api(req, res, url) {
     return send(res, 200, rows.map(r => ({ table:r.TABLE_NAME, action:r.ACTION, details:r.DETAILS, at:asIso(r.CHANGED_ON) })));
   }
   if (req.method === 'GET' && route === '/api/options') {
-    const [banks, hospitals, patients, donors, organs] = await Promise.all([
+    const [banks, hospitals, patients, donors, allDonors, organs] = await Promise.all([
       db('SELECT bank_id, name, city FROM blood_bank ORDER BY name'),
       db('SELECT hospital_id, name, city FROM hospital ORDER BY name'),
       db('SELECT p.patient_id, p.name, p.blood_group, p.urgency, h.name AS hospital FROM patient p JOIN hospital h ON h.hospital_id=p.hospital_id ORDER BY p.name'),
       db('SELECT donor_id, name, blood_group FROM v_eligible_donors ORDER BY name'),
+      db('SELECT donor_id, name, blood_group FROM donor ORDER BY name'),
       db("SELECT organ_donor_id, organ_type, d.name AS donor_name, d.blood_group FROM organ_donor od JOIN donor d ON d.donor_id=od.donor_id WHERE od.status='AVAILABLE' ORDER BY od.organ_type, d.name")
     ]);
     return send(res, 200, {
@@ -131,6 +132,7 @@ async function api(req, res, url) {
       hospitals:hospitals.rows.map(r=>({id:r.HOSPITAL_ID,name:r.NAME,city:r.CITY})),
       patients:patients.rows.map(r=>({id:r.PATIENT_ID,name:r.NAME,group:r.BLOOD_GROUP,urgency:r.URGENCY,hospital:r.HOSPITAL})),
       eligibleDonors:donors.rows.map(r=>({id:r.DONOR_ID,name:r.NAME,group:r.BLOOD_GROUP})),
+      allDonors:allDonors.rows.map(r=>({id:r.DONOR_ID,name:r.NAME,group:r.BLOOD_GROUP})),
       organDonors:organs.rows.map(r=>({id:r.ORGAN_DONOR_ID,organ:r.ORGAN_TYPE,name:r.DONOR_NAME,group:r.BLOOD_GROUP}))
     });
   }
@@ -162,6 +164,11 @@ async function api(req, res, url) {
     const result=await db(`INSERT INTO organ_waitlist (patient_id,organ_type,medical_urgency,hla_type,registered_on,status)
       VALUES (:patientId,:organ,:urgency,:hla,SYSDATE,'WAITING')`,{patientId,organ,urgency,hla},{autoCommit:true});
     return send(res,201,{message:'Patient added to the organ waitlist.'});
+  }
+  if (req.method === 'POST' && route === '/api/organ-donors') {
+    const b=await bodyJson(req), donorId=safeInt(b.donorId,'Donor'), organ=choice(b.organ,ORGANS,'Organ'), donorKind=choice(b.donorKind,new Set(['LIVING','DECEASED']),'Donor type'), consentDate=required(b.consentDate,'Consent date',10), hla=typeof b.hla==='string'&&b.hla.trim()?required(b.hla.trim(),'HLA type',30):null;
+    await db(`INSERT INTO organ_donor (donor_id,organ_type,donor_kind,hla_type,consent_date,status) VALUES (:donorId,:organ,:donorKind,:hla,TO_DATE(:consentDate,'YYYY-MM-DD'),'AVAILABLE')`,{donorId,organ,donorKind,hla,consentDate},{autoCommit:true});
+    return send(res,201,{message:'Organ donor registered and available for matching.'});
   }
   if (req.method === 'POST' && route === '/api/organ-match') {
     const b=await bodyJson(req), donorId=safeInt(b.organDonorId,'Organ donor');
